@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Erbfolge-Assistent · Wer erbt in meiner Familie?</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['JetBrains Mono', 'ui-monospace'],
+        },
+        colors: {
+          order1: { DEFAULT: '#059669', soft: '#ecfdf5' },
+          order2: { DEFAULT: '#2563eb', soft: '#eff6ff' },
+          order3: { DEFAULT: '#b45309', soft: '#fffbeb' },
+          spouse: { DEFAULT: '#9333ea', soft: '#faf5ff' },
+          excl:   { DEFAULT: '#dc2626' },
+          ink:    '#111827',
+          canvas: '#ffffff',
+        },
+      }
+    }
+  }
+</script>
+
+<style>
+  html{ font-size:18px; height:100%; }
+  body{ height:100%; }
+  body{
+    background:#f2f4f7;
+    font-family:'Inter', sans-serif;
+    color:#111827;
+    overflow:hidden;
+  }
+  .bg-grid{
+    background-image:
+      linear-gradient(rgba(15,23,42,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15,23,42,0.06) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  .card{ background:#fff; border:1px solid #e3e6ec; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:#d1d5db; border-radius:8px; }
+  ::-webkit-scrollbar-thumb:hover{ background:#b6bcc6; }
+
+  .node-card{ cursor:pointer; transition: filter .2s ease; }
+  .node-card:hover .node-rect{ filter: brightness(0.97); }
+  .node-rect{ transition: fill .35s ease, stroke .35s ease, opacity .35s ease; }
+  .node-excluded .node-rect{ opacity:.38; }
+  .node-excluded text{ opacity:.6; }
+  .link-path{ fill:none; stroke-width:2px; transition: stroke .35s ease, opacity .35s ease; }
+
+  @keyframes fadeUp{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+  .fade-up{ animation: fadeUp .3s ease both; }
+
+  input[type=range]{ -webkit-appearance:none; height:10px; border-radius:999px; background:linear-gradient(90deg,#059669,#9333ea); }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:30px; height:30px; border-radius:50%;
+    background:#fff; border:4px solid #059669; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25);
+    margin-top:-10px;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:30px; height:30px; border-radius:50%; background:#fff; border:4px solid #059669; cursor:pointer;
+  }
+
+  .modal-backdrop{ background: rgba(17,24,39,0.55); backdrop-filter: blur(4px); }
+
+  .law-pill{ font-family:'JetBrains Mono', monospace; letter-spacing:.01em; }
+  .timeline-line{ background: linear-gradient(180deg, #059669, #9333ea, #b45309); }
+
+  .big-choice{ border-color:#e2e5ea; background:#fff; }
+  .big-choice:hover{ border-color:#a5b4fc; background:#f7f7ff; }
+  .wizard-next-btn{
+    width:100%; padding:1.1rem 1.5rem; border-radius:1rem; font-weight:800; font-size:1.25rem;
+    background:#111827; color:#fff; transition:transform .15s ease, background .15s ease; text-align:center;
+  }
+  .wizard-next-btn:hover{ background:#1f2937; transform:translateY(-1px); }
+  .choice-pill{
+    display:block; width:100%; text-align:left; padding:1rem 1.25rem; border-radius:.9rem;
+    border:2px solid #e2e5ea; font-size:1.05rem; font-weight:700; color:#374151; background:#fff; transition:all .15s ease;
+  }
+  .choice-pill-active{ border-color:#9333ea; background:#faf5ff; color:#6b21a8; }
+  .status-btn-active{ box-shadow:0 0 0 3px rgba(0,0,0,.05) inset; }
+  .counter-btn{ border-color:#d1d5db; color:#374151; }
+  .counter-btn:disabled{ opacity:.3; }
+
+  .order-margin-label{ font-weight:800; line-height:1.15; transition: top .12s ease-out; }
+
+  #tree-svg{ touch-action:none; }
+</style>
+</head>
+<body class="h-full w-full antialiased">
+
+<div class="h-full w-full flex flex-col">
+
+  <!-- ============ HEADER ============ -->
+  <header class="flex-none z-30 card border-b px-5 py-3 flex items-center gap-3 flex-wrap">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-600 via-purple-600 to-amber-600 flex items-center justify-center flex-none">
+        <i data-lucide="git-branch" class="w-6 h-6 text-white"></i>
+      </div>
+      <div class="min-w-0">
+        <h1 class="text-lg font-extrabold tracking-tight leading-tight truncate" style="color:#111827">Erbfolge-Assistent</h1>
+        <p class="text-sm leading-tight truncate" style="color:#6b7280">Wer erbt in meiner Familie? · Gesetzliche Erbfolge</p>
+      </div>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <div id="preset-bar" class="hidden items-center gap-1.5 card rounded-xl p-1">
+      <button data-preset="A" class="preset-btn px-3 py-2 rounded-lg text-sm font-bold hover:bg-gray-100 transition flex items-center gap-1.5" style="color:#374151">
+        <i data-lucide="users" class="w-4 h-4"></i> Beispiel A
+      </button>
+      <button data-preset="B" class="preset-btn px-3 py-2 rounded-lg text-sm font-bold hover:bg-gray-100 transition flex items-center gap-1.5" style="color:#374151">
+        <i data-lucide="ban" class="w-4 h-4"></i> Beispiel B
+      </button>
+      <button data-preset="C" class="preset-btn px-3 py-2 rounded-lg text-sm font-bold hover:bg-gray-100 transition flex items-center gap-1.5" style="color:#374151">
+        <i data-lucide="users-round" class="w-4 h-4"></i> Beispiel C
+      </button>
+    </div>
+
+    <button id="btn-restart" class="card rounded-xl px-3.5 py-2.5 text-sm font-bold flex items-center gap-1.5 hover:bg-gray-50 transition" style="color:#374151">
+      <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Neu starten
+    </button>
+
+    <button id="btn-advanced-toggle" class="card rounded-xl px-3.5 py-2.5 text-sm font-bold flex items-center gap-1.5 hover:bg-gray-50 transition" style="color:#374151">
+      <i data-lucide="settings-2" class="w-4 h-4"></i> Erweiterter Modus
+    </button>
+  </header>
+
+  <!-- ============ WIZARD SCREEN ============ -->
+  <div id="wizard-screen" class="flex-1 min-h-0 overflow-y-auto flex items-start justify-center p-4 sm:p-8">
+    <div id="wizard-card" class="card w-full max-w-2xl rounded-3xl p-7 sm:p-10 my-4 fade-up"></div>
+  </div>
+
+  <!-- ============ RESULTS SCREEN ============ -->
+  <main id="results-screen" class="hidden flex-1 min-h-0 flex flex-col lg:flex-row gap-3 p-3">
+
+    <!-- ===== CANVAS COLUMN ===== -->
+    <section class="relative flex-1 min-w-0 rounded-2xl overflow-hidden card">
+      <div class="absolute inset-0 bg-grid pointer-events-none"></div>
+
+      <!-- Margin order labels: sticky overlay in the left margin, JS keeps them
+           vertically synced to their row as the canvas is panned/zoomed (see
+           positionOrderLabels) and clamped so they never scroll out of view. -->
+      <div id="order-label-3" class="absolute left-3 sm:left-4 z-20 pointer-events-none order-margin-label text-base sm:text-lg card rounded-xl px-3 py-2" style="top:5%; color:#b45309;">3. Ordnung<br><span class="text-sm font-semibold" style="color:#92600a">Großeltern</span></div>
+      <div id="order-label-2" class="absolute left-3 sm:left-4 z-20 pointer-events-none order-margin-label text-base sm:text-lg card rounded-xl px-3 py-2" style="top:26%; color:#2563eb;">2. Ordnung<br><span class="text-sm font-semibold" style="color:#1d4ed8">Eltern &amp; Geschwister</span></div>
+      <div id="order-label-1" class="absolute left-3 sm:left-4 z-20 pointer-events-none order-margin-label text-base sm:text-lg card rounded-xl px-3 py-2" style="top:78%; color:#059669;">1. Ordnung<br><span class="text-sm font-semibold" style="color:#047857">Abkömmlinge</span></div>
+
+      <!-- Advanced toolbar -->
+      <div id="advanced-toolbar" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-20 flex-col gap-2 items-center">
+        <div class="card rounded-xl p-1.5 flex items-center gap-1">
+          <button id="add-spouse" title="Ehegatte/in hinzufügen" class="p-2.5 rounded-lg hover:bg-purple-50 transition" style="color:#9333ea"><i data-lucide="heart" class="w-5 h-5"></i></button>
+          <button id="add-child" title="Kind hinzufügen" class="p-2.5 rounded-lg hover:bg-emerald-50 transition" style="color:#059669"><i data-lucide="baby" class="w-5 h-5"></i></button>
+          <button id="add-parent" title="Elternteil hinzufügen" class="p-2.5 rounded-lg hover:bg-blue-50 transition" style="color:#2563eb"><i data-lucide="user" class="w-5 h-5"></i></button>
+          <button id="add-grandparent" title="Großelternteil hinzufügen" class="p-2.5 rounded-lg hover:bg-amber-50 transition" style="color:#b45309"><i data-lucide="users" class="w-5 h-5"></i></button>
+        </div>
+      </div>
+
+      <!-- Active order banner -->
+      <div id="active-order-banner" class="absolute top-3 right-3 z-20 fade-up"></div>
+
+      <svg id="tree-svg" class="w-full h-full block">
+        <defs>
+          <filter id="soft-shadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.18"/>
+          </filter>
+        </defs>
+        <g id="zoom-layer"></g>
+      </svg>
+
+      <!-- Zoom controls -->
+      <div class="absolute bottom-3 right-3 z-20 card rounded-xl p-1 flex items-center gap-1">
+        <button id="zoom-out" class="p-2.5 rounded-lg hover:bg-gray-100 transition" style="color:#374151"><i data-lucide="zoom-out" class="w-5 h-5"></i></button>
+        <button id="zoom-reset" class="p-2.5 rounded-lg hover:bg-gray-100 transition" style="color:#374151"><i data-lucide="maximize" class="w-5 h-5"></i></button>
+        <button id="zoom-in" class="p-2.5 rounded-lg hover:bg-gray-100 transition" style="color:#374151"><i data-lucide="zoom-in" class="w-5 h-5"></i></button>
+      </div>
+
+      <!-- Legend -->
+      <div class="absolute bottom-3 left-3 z-20 card rounded-xl px-3.5 py-2.5 flex items-center gap-3 text-sm font-bold flex-wrap max-w-[70%]" style="color:#374151">
+        <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-full bg-order1 inline-block"></i>1. Ordnung</span>
+        <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-full bg-order2 inline-block"></i>2. Ordnung</span>
+        <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-full bg-order3 inline-block"></i>3. Ordnung</span>
+        <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-full bg-spouse inline-block"></i>Ehegatte</span>
+        <span class="flex items-center gap-1.5" style="color:#dc2626"><i class="w-3 h-3 rounded-full border-2 inline-block" style="border-color:#dc2626"></i>Ausgeschlossen</span>
+      </div>
+    </section>
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="w-full lg:w-[440px] flex-none flex flex-col gap-3 overflow-y-auto pr-0.5" style="max-height:100%;">
+
+      <!-- Estate value -->
+      <div class="card rounded-2xl p-5">
+        <h2 class="text-lg font-extrabold mb-3 flex items-center gap-2" style="color:#111827"><i data-lucide="banknote" class="w-5 h-5" style="color:#059669"></i> Gesamterbe in €</h2>
+        <div class="text-3xl font-extrabold font-mono mb-3" id="estate-value-display" style="color:#111827"></div>
+        <input id="estate-slider" type="range" min="10000" max="5000000" step="10000" value="500000" class="w-full">
+        <div class="flex justify-between text-sm font-semibold mt-1.5" style="color:#9ca3af"><span>10.000 €</span><span>5.000.000 €</span></div>
+        <input id="estate-number" type="number" min="0" step="1000" value="500000" class="w-full mt-3 text-lg font-bold rounded-xl border-2 px-3.5 py-2.5 outline-none focus:border-emerald-500" style="border-color:#d1d5db;">
+
+        <label class="flex items-center gap-2.5 mt-4 cursor-pointer select-none">
+          <input id="zugewinn-toggle" type="checkbox" checked class="w-5 h-5 rounded accent-purple-600">
+          <span class="text-base font-semibold" style="color:#374151">Zugewinngemeinschaft <span style="color:#9ca3af">(gesetzlicher Güterstand, +¼)</span></span>
+        </label>
+      </div>
+
+      <!-- Heir table -->
+      <div class="card rounded-2xl p-5">
+        <h2 class="text-lg font-extrabold mb-3 flex items-center gap-2" style="color:#111827"><i data-lucide="users" class="w-5 h-5" style="color:#2563eb"></i> Die gesetzlichen Erben</h2>
+        <div id="heir-table" class="space-y-2.5"></div>
+      </div>
+
+      <!-- Fraction / Donut -->
+      <div class="card rounded-2xl p-5">
+        <h2 class="text-lg font-extrabold mb-3 flex items-center gap-2" style="color:#111827"><i data-lucide="pie-chart" class="w-5 h-5" style="color:#9333ea"></i> Erbquoten</h2>
+        <div class="flex gap-4 items-center">
+          <svg id="donut-svg" width="150" height="150" class="flex-none"></svg>
+          <div id="donut-legend" class="flex-1 min-w-0 space-y-2 text-base"></div>
+        </div>
+        <div id="fraction-bar" class="mt-4 h-4 rounded-full overflow-hidden flex w-full border" style="border-color:#e3e6ec"></div>
+      </div>
+
+      <!-- Legal Logic Explainer -->
+      <div class="card rounded-2xl p-5">
+        <h2 class="text-lg font-extrabold mb-3 flex items-center gap-2" style="color:#111827"><i data-lucide="scroll-text" class="w-5 h-5" style="color:#b45309"></i> Warum? Die rechtliche Begründung</h2>
+        <div id="steps-timeline" class="relative pl-6 space-y-5"></div>
+      </div>
+
+    </aside>
+  </main>
+</div>
+
+<!-- ============ INFO POPUP (simple mode) ============ -->
+<div id="info-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop p-4">
+  <div class="bg-white rounded-3xl w-[460px] max-w-full p-7 fade-up">
+    <div id="info-modal-body"></div>
+    <button id="info-modal-close" class="wizard-next-btn mt-6">Schließen</button>
+  </div>
+</div>
+
+<!-- ============ NODE MODAL (advanced add/edit) ============ -->
+<div id="node-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop p-4">
+  <div class="bg-white rounded-3xl w-[440px] max-w-full p-6 fade-up">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="modal-title" class="text-xl font-extrabold flex items-center gap-2" style="color:#111827"><i data-lucide="user-plus" class="w-5 h-5"></i> Person hinzufügen</h3>
+      <button id="modal-close" class="hover:opacity-60 transition" style="color:#6b7280"><i data-lucide="x" class="w-6 h-6"></i></button>
+    </div>
+
+    <label class="block text-sm font-bold mb-1.5" style="color:#6b7280">Name</label>
+    <input id="modal-name" type="text" placeholder="z. B. Kind A" class="w-full border-2 rounded-xl px-3.5 py-2.5 text-lg mb-4 outline-none focus:border-emerald-500 transition" style="border-color:#d1d5db;">
+
+    <div id="modal-status-wrap">
+      <label class="block text-sm font-bold mb-1.5" style="color:#6b7280">Status</label>
+      <div id="modal-status" class="grid grid-cols-2 gap-2 mb-4"></div>
+    </div>
+
+    <div id="modal-relation-wrap" class="hidden mb-4">
+      <label class="block text-sm font-bold mb-1.5" style="color:#6b7280">Zuordnung</label>
+      <select id="modal-relation" class="w-full border-2 rounded-xl px-3.5 py-2.5 text-lg outline-none focus:border-emerald-500 transition" style="border-color:#d1d5db;"></select>
+    </div>
+
+    <div id="modal-actions-existing" class="hidden grid grid-cols-2 gap-2 mb-4">
+      <button id="modal-add-child" class="px-3 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-1.5" style="background:#ecfdf5;color:#047857;"><i data-lucide="plus" class="w-4 h-4"></i> Nachkomme</button>
+      <button id="modal-delete" class="px-3 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-1.5" style="background:#fef2f2;color:#dc2626;"><i data-lucide="trash-2" class="w-4 h-4"></i> Löschen</button>
+    </div>
+
+    <button id="modal-save" class="wizard-next-btn">Speichern</button>
+  </div>
+</div>
+
+<!-- toast -->
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 hidden card rounded-xl px-4 py-3 text-base font-bold items-center gap-2" style="color:#111827"></div>
+
+<script>
+/* ============================================================
+   Section 1: constants, node model, state, presets
+   ============================================================ */
+
+const fmtEUR = new Intl.NumberFormat('de-DE', { style:'currency', currency:'EUR', maximumFractionDigits:0 });
+const fmtPct = (x) => (x*100).toLocaleString('de-DE', { maximumFractionDigits: 2 }) + ' %';
+
+let uidCounter = 0;
+const uid = () => 'n' + (uidCounter++);
+
+function makeNode(name, status='alive', extra={}){
+  return { id: uid(), name, status, children: [], ...extra };
+}
+
+// status: 'alive' | 'deceased' | 'disclaimed' | 'unworthy'
+const STATUS_META = {
+  alive:      { label:'Lebt',                icon:'✓', law:null },
+  deceased:   { label:'Vorverstorben',        icon:'✝', law:'Vorversterben' },
+  disclaimed: { label:'Ausgeschlagen',        icon:'⊘', law:'Erbausschlagung' },
+  unworthy:   { label:'Erbunwürdig',          icon:'⚠', law:'Erbunwürdigkeit' },
+};
+const STATUS_COLORS = { alive:'#059669', deceased:'#6b7280', disclaimed:'#dc2626', unworthy:'#b45309' };
+
+let state = null;
+
+function freshState(){
+  return {
+    perspective: 'self',
+    estateValue: 500000,
+    zugewinn: true,
+    spouse: null,
+    children: [],
+    father: null,
+    mother: null,
+    grandparents: {
+      paternal: { grandfather:null, grandmother:null },
+      maternal: { grandfather:null, grandmother:null },
+    }
+  };
+}
+
+/* ---------------- PRESETS (kept for quick demoing in advanced mode) ---------------- */
+
+function loadPresetA(){
+  pendingFit = true;
+  state = freshState();
+  state.spouse = makeNode('Ehegatte/in', 'alive');
+  state.children = [ makeNode('Kind A'), makeNode('Kind B') ];
+  showResultsScreen();
+  render();
+  toast('Beispiel A geladen: Standardfamilie (Ehegatte + 2 Kinder)');
+}
+
+function loadPresetB(){
+  pendingFit = true;
+  state = freshState();
+  state.spouse = makeNode('Ehegatte/in', 'alive');
+  const kindA = makeNode('Kind A', 'disclaimed');
+  kindA.children = [ makeNode('Enkel A1'), makeNode('Enkel A2') ];
+  state.children = [ kindA, makeNode('Kind B') ];
+  showResultsScreen();
+  render();
+  toast('Beispiel B geladen: Ausschlagung mit Eintritt der Enkel');
+}
+
+function loadPresetC(){
+  pendingFit = true;
+  state = freshState();
+  state.spouse = makeNode('Ehegatte/in', 'alive');
+  state.children = [];
+  const vater = makeNode('Vater', 'deceased');
+  vater.children = [ makeNode('Schwester', 'alive') ];
+  state.father = vater;
+  state.mother = makeNode('Mutter', 'alive');
+  showResultsScreen();
+  render();
+  toast('Beispiel C geladen: Keine 1. Ordnung → 2. Ordnung (Eltern & Geschwister)');
+}
+
+/* ---------------- TOAST ---------------- */
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  el.classList.add('flex');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.classList.add('hidden'); el.classList.remove('flex'); }, 2600);
+}
+
+/* ============================================================
+   Section 2: LEGAL ENGINE (§§ 1924-1930, 1371, 1931, 1953, 2344)
+   — unchanged core calculation engine —
+   ============================================================ */
+
+function isProductive(node){
+  if (!node) return false;
+  if (node.status === 'alive') return true;
+  return (node.children || []).some(isProductive);
+}
+
+// Generic per-stirpes allocator with Eintrittsprinzip (representation) and
+// Anwachsung (accretion) when an entire branch is extinct.
+// `unit` controls terminology: 'stamm' (Stammprinzip — used at 1. Ordnung, where
+// each child of the deceased founds its own "Stamm") vs 'linie' (Linienprinzip —
+// used at 2. Ordnung, where the paternal and maternal side are each a "Linie",
+// not a "Stamm").
+function computeShares(branchNodes, totalShare, steps, unit='stamm'){
+  const result = {};
+  const nodes = (branchNodes || []).filter(Boolean);
+  if (nodes.length === 0 || totalShare <= 0) return result;
+
+  const productive = nodes.filter(isProductive);
+  const extinct = nodes.filter(n => !isProductive(n));
+
+  extinct.forEach(n => {
+    if (steps) steps.push(n.__line ? {
+      icon:'ban', kind:'extinct',
+      title: `${n.name} ohne Erben`,
+      desc: `Für die ${n.name} sind keine Großelternteile oder deren Abkömmlinge vorhanden. Diese Linie entfällt vollständig; ihr Anteil wächst der anderen Linie an.`,
+      law: 'Anwachsung'
+    } : unit === 'linie' ? {
+      icon:'ban', kind:'extinct',
+      title: `Linie „${n.name}“ erloschen`,
+      desc: `${n.name} ist ${STATUS_META[n.status].label.toLowerCase()} und hat keine erbberechtigten Abkömmlinge. Die Linie entfällt vollständig; ihr Anteil wächst der anderen Linie an.`,
+      law: 'Anwachsung'
+    } : {
+      icon:'ban', kind:'extinct',
+      title: `Stamm „${n.name}“ erloschen`,
+      desc: `${n.name} ist ${STATUS_META[n.status].label.toLowerCase()} und hat keine erbberechtigten Abkömmlinge. Der Stamm entfällt vollständig; sein Anteil wächst den übrigen Miterben desselben Stammes proportional an.`,
+      law: 'Anwachsung'
+    });
+  });
+
+  if (productive.length === 0) return result;
+  const per = totalShare / productive.length;
+
+  productive.forEach(node => {
+    if (node.__line) {
+      // Synthetic paternal/maternal grouping node — not a person, just splits its share
+      // between the two grandparents (or their descendants) of that line.
+      if (steps) steps.push({
+        icon:'split', kind:'line-split',
+        title:`${node.name}: Aufteilung`,
+        desc:`Der auf die ${node.name} entfallende Anteil von ${fmtPct(per)} wird zu gleichen Teilen auf Großvater und Großmutter dieser Linie (bzw. deren Abkömmlinge) verteilt.`,
+        law:'Linienprinzip'
+      });
+      const sub = computeShares(node.children, per, steps);
+      for (const k in sub) result[k] = (result[k] || 0) + sub[k];
+    } else if (node.status === 'alive') {
+      result[node.id] = (result[node.id] || 0) + per;
+    } else {
+      const meta = STATUS_META[node.status];
+      const heirs = (node.children||[]).filter(isProductive).map(c=>c.name);
+      if (steps) steps.push({
+        icon: node.status==='disclaimed' ? 'ban' : node.status==='unworthy' ? 'alert-triangle' : 'skull',
+        kind:'subrogation',
+        title: `${node.name}: ${meta.label} — Eintritt der Abkömmlinge`,
+        desc: `${node.name} erhält keinen eigenen Erbteil. Gemäß Eintrittsprinzip treten die Abkömmlinge an die Stelle: ${heirs.join(', ') || '—'}. Der Anteil von ${fmtPct(per)} wird ${unit==='linie' ? 'innerhalb dieser Linie weiterverteilt' : 'unter ihnen nach Stämmen weiterverteilt'}.`,
+        law: meta.law || 'Eintrittsprinzip'
+      });
+      const sub = computeShares(node.children, per, steps, unit);
+      for (const k in sub) result[k] = (result[k] || 0) + sub[k];
+    }
+  });
+  return result;
+}
+
+function computeInheritance(){
+  const steps = [];
+  const heirShares = {};   // nodeId -> fraction of estate
+  const heirMeta = {};     // nodeId -> {node, order}
+
+  // --- Determine which blood order is structurally productive ---
+  const order1Root = { status:'x', children: state.children };
+  const order1Productive = isProductive(order1Root);
+
+  const order2Root = { status:'x', children: [state.father, state.mother].filter(Boolean) };
+  const order2Productive = !order1Productive && isProductive(order2Root);
+
+  const paternalLine = { id:'line-paternal', name:'Väterliche Linie', __line:true, children:[state.grandparents.paternal.grandfather, state.grandparents.paternal.grandmother].filter(Boolean) };
+  const maternalLine = { id:'line-maternal', name:'Mütterliche Linie', __line:true, children:[state.grandparents.maternal.grandfather, state.grandparents.maternal.grandmother].filter(Boolean) };
+  const order3Root = { status:'x', children: [paternalLine, maternalLine] };
+  const order3Productive = !order1Productive && !order2Productive && isProductive(order3Root);
+
+  const anyBloodHeirs = order1Productive || order2Productive || order3Productive;
+  const activeOrder = order1Productive ? 1 : order2Productive ? 2 : order3Productive ? 3 : 0;
+
+  steps.push({
+    icon:'gavel', kind:'intro',
+    title:'Gesetzliche Erbfolge nach Ordnungen',
+    desc: activeOrder===1
+      ? 'Es sind Abkömmlinge (Kinder, Enkel, …) des Erblassers vorhanden oder durch Eintritt vertreten. Die 1. Ordnung ist eröffnet und schließt die 2. und 3. Ordnung vollständig aus.'
+      : activeOrder===2
+      ? 'Es sind keine erbberechtigten Abkömmlinge (1. Ordnung) vorhanden. Die Erbfolge geht auf die Eltern des Erblassers und deren Abkömmlinge (Geschwister, Nichten/Neffen) über.'
+      : activeOrder===3
+      ? 'Weder die 1. noch die 2. Ordnung sind vorhanden bzw. produktiv. Es erben die Großeltern des Erblassers und deren Abkömmlinge (Onkel/Tanten, Cousins).'
+      : 'Es sind weder Abkömmlinge noch Eltern/Großeltern (oder deren Abkömmlinge) vorhanden.',
+    law: activeOrder===1 ? 'Stammprinzip' : activeOrder===2 ? 'Linienprinzip' : activeOrder===3 ? 'Linienprinzip' : '—'
+  });
+
+  // --- Spouse share (§ 1931 + § 1371) ---
+  const spouse = state.spouse;
+  const spouseActive = !!spouse && spouse.status === 'alive';
+  let spouseShare = 0;
+
+  if (spouse && !spouseActive){
+    steps.push({
+      icon:'heart-crack', kind:'spouse-excluded',
+      title:`Ehegatte/in ausgeschlossen`,
+      desc:`${spouse.name} ist ${STATUS_META[spouse.status].label.toLowerCase()} und erhält daher keinen Erbteil. Eine Vertretung des Ehegattenanteils durch Dritte findet nicht statt — der Anteil verbleibt vollständig bei den Verwandtenerben.`,
+      law: STATUS_META[spouse.status].law || '—'
+    });
+  }
+
+  if (spouseActive){
+    let base;
+    let baseLabel;
+    if (!anyBloodHeirs){ base = 1; baseLabel = 'Alleinerbe, da keine erbberechtigten Verwandten vorhanden sind'; }
+    else if (activeOrder===1){ base = 0.25; baseLabel = 'neben Verwandten der 1. Ordnung: ¼ des Nachlasses'; }
+    else { base = 0.5; baseLabel = 'neben Verwandten der 2. Ordnung oder Großeltern: ½ des Nachlasses'; }
+
+    let final = base;
+    if (state.zugewinn && base < 1){
+      final = base + 0.25;
+      steps.push({
+        icon:'heart', kind:'spouse',
+        title:`Ehegattenerbrecht: ${fmtPct(base)} + ¼ Zugewinnpauschale`,
+        desc:`${spouse.name} erhält den gesetzlichen Erbteil (${baseLabel}). Da die Ehegatten im gesetzlichen Güterstand der Zugewinngemeinschaft lebten, erhöht sich der Erbteil pauschal um ¼ des Nachlasses, unabhängig vom tatsächlich erzielten Zugewinn. Gesamtquote: ${fmtPct(final)}.`,
+        law: 'Ehegattenerbrecht + Zugewinnausgleich'
+      });
+    } else {
+      steps.push({
+        icon:'heart', kind:'spouse',
+        title: base===1 ? `Ehegatte/in als Alleinerbe/in` : `Ehegattenerbrecht: ${fmtPct(base)}`,
+        desc: base===1
+          ? `${spouse.name} erbt als Alleinerbe/in den gesamten Nachlass, da keine Verwandten der 1.–3. Ordnung vorhanden sind.`
+          : `${spouse.name} erhält den gesetzlichen Erbteil (${baseLabel}). Der pauschale Zugewinnausgleich greift nicht (kein gesetzlicher Güterstand / abbedungen).`,
+        law: 'Ehegattenerbrecht'
+      });
+    }
+    spouseShare = final;
+    if (activeOrder !== 0){
+      steps.push({
+        icon:'archive', kind:'voraus',
+        title:'Voraus: Haushaltsgegenstände',
+        desc: activeOrder===1
+          ? `Zusätzlich zur Erbquote erhält ${spouse.name} als Voraus die Haushaltsgegenstände und Hochzeitsgeschenke unbeschränkt, da neben Verwandten der 1. Ordnung geerbt wird.`
+          : `Der Voraus steht ${spouse.name} nur beschränkt zu, soweit er zur Führung eines angemessenen Haushalts benötigt wird (Erbfolge neben 2. Ordnung/Großeltern).`,
+        law: 'Voraus'
+      });
+    }
+  }
+
+  const remaining = Math.max(0, 1 - spouseShare);
+
+  if (anyBloodHeirs && remaining > 0){
+    if (activeOrder === 1){
+      const shares = computeShares(state.children, remaining, steps);
+      Object.assign(heirShares, shares);
+      state.children.forEach(c => markMeta(c, heirMeta, 1));
+      steps.push({
+        icon:'split', kind:'distribute',
+        title:`Verteilung unter den Abkömmlingen`,
+        desc:`Der verbleibende Nachlassanteil von ${fmtPct(remaining)} wird nach dem Stammprinzip zu gleichen Teilen unter den Kindern des Erblassers (bzw. deren Abkömmlingen im Wege des Eintritts) verteilt.`,
+        law:'Stammprinzip'
+      });
+    } else if (activeOrder === 2){
+      const shares = computeShares([state.father, state.mother], remaining, steps, 'linie');
+      Object.assign(heirShares, shares);
+      if (state.father) markMeta(state.father, heirMeta, 2);
+      if (state.mother) markMeta(state.mother, heirMeta, 2);
+      steps.push({
+        icon:'split', kind:'distribute',
+        title:`Verteilung nach Linien: Vater- und Mutterlinie`,
+        desc:`Der verbleibende Anteil von ${fmtPct(remaining)} wird nach dem Linienprinzip je zur Hälfte der väterlichen und der mütterlichen Linie zugeordnet. Lebt ein Elternteil, erhält er/sie seine Linie allein; ist ein Elternteil vorverstorben, treten dessen Abkömmlinge (Geschwister, Nichten/Neffen des Erblassers) an seine Stelle.`,
+        law:'Linienprinzip'
+      });
+    } else if (activeOrder === 3){
+      const shares = computeShares([paternalLine, maternalLine], remaining, steps);
+      Object.assign(heirShares, shares);
+      [state.grandparents.paternal.grandfather, state.grandparents.paternal.grandmother,
+       state.grandparents.maternal.grandfather, state.grandparents.maternal.grandmother].forEach(gp => markMeta(gp, heirMeta, 3));
+      steps.push({
+        icon:'split', kind:'distribute',
+        title:`Verteilung unter den vier Großeltern-Stämmen`,
+        desc:`Der verbleibende Anteil von ${fmtPct(remaining)} wird je zur Hälfte der väterlichen und der mütterlichen Linie zugewiesen und dort wiederum je zur Hälfte auf Großvater und Großmutter verteilt. Ist ein Großelternteil vorverstorben, treten dessen Abkömmlinge (Onkel/Tanten, Cousins) ein; ist eine ganze Linie erloschen, erbt die andere Linie allein.`,
+        law:'Linienprinzip'
+      });
+    }
+  } else if (!spouseActive && !anyBloodHeirs){
+    steps.push({
+      icon:'building-2', kind:'fiskus',
+      title:'Nachlass fällt an den Staat',
+      desc:'Weder ein erbberechtigter Ehegatte noch Verwandte der 1.–3. Ordnung sind vorhanden. Der Fiskus (das zuständige Bundesland) wird gesetzlicher Erbe.',
+      law:'Erbrecht des Fiskus'
+    });
+  }
+
+  return { steps, heirShares, heirMeta, spouseShare, spouseActive, activeOrder, anyBloodHeirs };
+}
+
+function markMeta(node, heirMeta, order){
+  if (!node) return;
+  heirMeta[node.id] = { node, order };
+  (node.children||[]).forEach(c => markMeta(c, heirMeta, order));
+}
+
+/* Fraction simplifier for readable legal fractions like 1/4, 1/8, 1/6 */
+function toFraction(decimal, maxDen=5040){
+  if (decimal <= 0) return '0';
+  for (let den=1; den<=maxDen; den++){
+    const num = Math.round(decimal*den);
+    if (Math.abs(num/den - decimal) < 1e-9){
+      const g = gcd(num, den);
+      const n = num/g, d = den/g;
+      return d === 1 ? `${n}` : `${n}/${d}`;
+    }
+  }
+  return decimal.toFixed(4);
+}
+function gcd(a,b){ return b===0 ? a : gcd(b, a%b); }
+
+/* ============================================================
+   Section 3: RENDERING — D3 tree canvas, donut chart, panels
+   ============================================================ */
+
+const ORDER_COLOR = { 1:'#059669', 2:'#2563eb', 3:'#b45309', spouse:'#9333ea', root:'#111827' };
+const NODE_W = 194, NODE_H = 78, LEVEL_H = 176, SIB_GAP = 56;
+
+const svg = d3.select('#tree-svg');
+const zoomLayer = d3.select('#zoom-layer');
+let pendingFit = false;
+let lastNodeData = [];
+
+// Tree-space Y (before zoom transform) that each order's row is centered on.
+// Updated in renderTree() from the actual laid-out nodes; falls back to the
+// nominal firstLevelY used by layoutBand() when an order has no members yet.
+let orderAnchorY = { 1:175, 2:-175, 3:-650 };
+
+const zoomBehavior = d3.zoom()
+  .scaleExtent([0.2, 2.5])
+  .on('zoom', (ev) => { zoomLayer.attr('transform', ev.transform); positionOrderLabels(ev.transform); });
+
+svg.call(zoomBehavior);
+
+// Keep the "1./2./3. Ordnung" margin labels pinned in the visible canvas at all
+// times, while still tracking the screen position of their row as closely as
+// possible — so they never get scaled/panned out of view (sticky), but also
+// never drift away from the row they describe while it's on screen (synced).
+function positionOrderLabels(transform){
+  const rect = svg.node().getBoundingClientRect();
+  if (!rect.height) return;
+
+  const topPad = 12;
+  const bottomPad = 96; // stay clear of the legend pinned bottom-left
+  const minY = topPad, maxY = Math.max(minY, rect.height - bottomPad);
+  // Cap the gap at half the available room so 3 labels always fit inside
+  // [minY,maxY] with room to spare — required by the backward pass below.
+  const GAP = Math.min(58, (maxY - minY) / 2);
+
+  // Order 3 (top) → 2 (middle) → 1 (bottom) matches the fixed visual stacking
+  // of Großeltern / Eltern&Geschwister / Abkömmlinge around the center root.
+  const rows = [3,2,1].map(o => {
+    const screenY = transform.y + orderAnchorY[o] * transform.k;
+    return { o, y: Math.min(maxY, Math.max(minY, screenY)) };
+  });
+  // Forward pass: push later rows down to respect the minimum gap.
+  for (let i=1;i<rows.length;i++){
+    if (rows[i].y < rows[i-1].y + GAP) rows[i].y = rows[i-1].y + GAP;
+  }
+  // Backward pass: if that pushed the last row past maxY, pull every row
+  // back up from the bottom. Without this, a uniform shift-up (the old
+  // approach) could carry the 3. Ordnung label above minY — i.e. off the
+  // top edge — which defeats the "always visible" requirement entirely.
+  if (rows[rows.length-1].y > maxY){
+    rows[rows.length-1].y = maxY;
+    for (let i=rows.length-2;i>=0;i--){
+      if (rows[i].y > rows[i+1].y - GAP) rows[i].y = rows[i+1].y - GAP;
+    }
+  }
+  rows.forEach(r => { r.y = Math.min(maxY, Math.max(minY, r.y)); });
+
+  rows.forEach(r => {
+    const el = document.getElementById('order-label-'+r.o);
+    if (el) el.style.top = r.y + 'px';
+  });
+}
+
+// Fit the whole tree into the visible canvas so nothing is ever cut off —
+// seniors should never need to hunt around with manual pan/zoom.
+function fitView(nodeData, animate=true){
+  const rect = svg.node().getBoundingClientRect();
+  if (!rect.width || !rect.height || !nodeData || nodeData.length === 0) return;
+
+  const xs = nodeData.map(d=>d.x), ys = nodeData.map(d=>d.y);
+  const minX = Math.min(...xs) - NODE_W/2 - 24, maxX = Math.max(...xs) + NODE_W/2 + 24;
+  const minY = Math.min(...ys) - NODE_H/2 - 24, maxY = Math.max(...ys) + NODE_H/2 + 24;
+  const treeW = Math.max(1, maxX-minX), treeH = Math.max(1, maxY-minY);
+
+  const availW = Math.max(200, rect.width - 190);   // leave room for left margin labels
+  const availH = Math.max(200, rect.height - 60);
+
+  let scale = Math.min(availW/treeW, availH/treeH);
+  scale = Math.max(0.3, Math.min(scale, 1.15));
+
+  const cx = (minX+maxX)/2, cy = (minY+maxY)/2;
+  const tx = rect.width/2 + 95 - cx*scale;
+  const ty = rect.height/2 - cy*scale;
+
+  const t = d3.zoomIdentity.translate(tx,ty).scale(scale);
+  if (animate) svg.transition().duration(500).call(zoomBehavior.transform, t);
+  else svg.call(zoomBehavior.transform, t);
+}
+
+document.getElementById('zoom-in').onclick = () => svg.transition().duration(200).call(zoomBehavior.scaleBy, 1.25);
+document.getElementById('zoom-out').onclick = () => svg.transition().duration(200).call(zoomBehavior.scaleBy, 0.8);
+document.getElementById('zoom-reset').onclick = () => fitView(lastNodeData, true);
+
+// Lay out one "band" (a set of root stems + descendants) using d3.tree(),
+// return an array of {node, x, y, depth} ready to render.
+function layoutBand(rootNodes, opts){
+  const { direction, firstLevelY, label } = opts; // direction: +1 down, -1 up
+  const valid = (rootNodes||[]).filter(Boolean);
+  if (valid.length === 0) return { items: [], links: [] };
+
+  const virtualRoot = { id:'virtual-'+label, name:'', __virtual:true, children: valid };
+  const hierarchy = d3.hierarchy(virtualRoot);
+  const treeLayout = d3.tree().nodeSize([NODE_W + SIB_GAP, LEVEL_H]);
+  treeLayout(hierarchy);
+
+  const descendants = hierarchy.descendants();
+  const xs = descendants.filter(d=>d.depth>0).map(d=>d.x);
+  const midX = xs.length ? (Math.min(...xs)+Math.max(...xs))/2 : 0;
+
+  const items = [];
+  const posMap = new Map();
+  descendants.forEach(d => {
+    const x = d.x - midX;
+    const y = d.depth === 0 ? 0 : direction * (firstLevelY + (d.depth-1) * LEVEL_H);
+    posMap.set(d, {x,y});
+    if (d.depth > 0) items.push({ node: d.data, x, y, depth: d.depth, isLine: !!d.data.__line });
+  });
+
+  const links = [];
+  hierarchy.links().forEach(l => {
+    const s = posMap.get(l.source), t = posMap.get(l.target);
+    if (l.target.depth === 0) return;
+    links.push({ x1:s.x, y1:s.y, x2:t.x, y2:t.y, targetNode: l.target.data });
+  });
+
+  return { items, links };
+}
+
+function linkPath(l){
+  const midY = (l.y1 + l.y2) / 2;
+  return `M${l.x1},${l.y1} C${l.x1},${midY} ${l.x2},${midY} ${l.x2},${l.y2}`;
+}
+
+function nodeExcluded(order, activeOrder){
+  return activeOrder !== 0 && order !== activeOrder;
+}
+
+function render(){
+  const result = computeInheritance();
+  window.__lastResult = result;
+
+  renderBanner(result);
+  renderTree(result);
+  if (pendingFit){ fitView(lastNodeData, true); pendingFit = false; }
+  renderDonut(result);
+  renderFractionBar(result);
+  renderHeirTable(result);
+  renderSteps(result);
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderBanner(result){
+  const el = document.getElementById('active-order-banner');
+  const map = {
+    0: { text: result.spouseActive ? 'Ehegatte ist Alleinerbe' : 'Nachlass fällt an den Staat', color:'background:#f3f4f6;color:#374151;border-color:#e5e7eb' },
+    1: { text: '1. Ordnung erbt', color:'background:#ecfdf5;color:#047857;border-color:#a7f3d0' },
+    2: { text: '2. Ordnung erbt', color:'background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe' },
+    3: { text: '3. Ordnung erbt', color:'background:#fffbeb;color:#92600a;border-color:#fde68a' },
+  };
+  const m = map[result.activeOrder];
+  el.innerHTML = `<div class="card rounded-xl px-4 py-2 text-base font-extrabold flex items-center gap-2" style="${m.color}">
+    <i data-lucide="scale" class="w-4 h-4"></i> ${m.text}
+  </div>`;
+}
+
+function renderTree(result){
+  const { heirShares, activeOrder } = result;
+
+  const order1 = layoutBand(state.children, { direction:1, firstLevelY:175, label:'o1' });
+  const order2 = layoutBand([state.father, state.mother], { direction:-1, firstLevelY:175, label:'o2' });
+
+  const paternalLine = { id:'line-paternal', name:'Väterliche Linie', __line:true, children:[state.grandparents.paternal.grandfather, state.grandparents.paternal.grandmother].filter(Boolean) };
+  const maternalLine = { id:'line-maternal', name:'Mütterliche Linie', __line:true, children:[state.grandparents.maternal.grandfather, state.grandparents.maternal.grandmother].filter(Boolean) };
+  const order3Roots = [];
+  if (paternalLine.children.length) order3Roots.push(paternalLine);
+  if (maternalLine.children.length) order3Roots.push(maternalLine);
+  const order3 = layoutBand(order3Roots, { direction:-1, firstLevelY:650, label:'o3' });
+
+  const bandAnchorY = (items, fallback) => {
+    if (!items || !items.length) return fallback;
+    const ys = items.map(it => it.y);
+    return (Math.min(...ys) + Math.max(...ys)) / 2;
+  };
+  orderAnchorY = {
+    1: bandAnchorY(order1.items, 175),
+    2: bandAnchorY(order2.items, -175),
+    3: bandAnchorY(order3.items, -650),
+  };
+
+  const allItems = [
+    ...order1.items.map(it => ({...it, order:1})),
+    ...order2.items.map(it => ({...it, order:2})),
+    ...order3.items.map(it => ({...it, order:3})),
+  ];
+  const allLinks = [
+    ...order1.links.map(l => ({...l, order:1})),
+    ...order2.links.map(l => ({...l, order:2})),
+    ...order3.links.map(l => ({...l, order:3})),
+  ];
+
+  // ---- center: Erblasser + Spouse ----
+  const rootLabel = state.perspective === 'other' ? 'Verstorbene Person' : 'Erblasser/in (Sie)';
+  const centerItems = [{ node:{id:'erblasser', name:rootLabel, __root:true}, x:0, y:0, depth:0, order:0 }];
+  if (state.spouse) centerItems.push({ node: state.spouse, x: 230, y: 0, depth:0, order:'spouse' });
+
+  // ---- LINKS ----
+  const linkSel = zoomLayer.selectAll('path.link-path')
+    .data(allLinks, (d,i) => (d.targetNode.id || i) + '-' + d.order);
+
+  linkSel.exit().transition().duration(300).attr('opacity',0).remove();
+
+  linkSel.enter()
+    .append('path')
+    .attr('class','link-path')
+    .attr('opacity',0)
+    .attr('stroke', d => ORDER_COLOR[d.order])
+    .merge(linkSel)
+    .attr('opacity', d => nodeExcluded(d.order, activeOrder) ? 0.18 : 0.55)
+    .transition().duration(450)
+    .attr('stroke', d => ORDER_COLOR[d.order])
+    .attr('d', linkPath);
+
+  // marriage tie
+  const marriageData = state.spouse ? [{x1:95,y1:0,x2:135,y2:0}] : [];
+  const marriageSel = zoomLayer.selectAll('path.marriage-link').data(marriageData);
+  marriageSel.exit().remove();
+  marriageSel.enter().append('path').attr('class','marriage-link')
+    .merge(marriageSel)
+    .attr('d', d => `M${d.x1},${d.y1} L${d.x2},${d.y2}`)
+    .attr('stroke', ORDER_COLOR.spouse).attr('stroke-width', 3).attr('stroke-dasharray','2,6')
+    .attr('opacity', 0.6);
+
+  // ---- NODES ----
+  const nodeData = [...centerItems, ...allItems];
+  lastNodeData = nodeData;
+  const nodeSel = zoomLayer.selectAll('g.node-card')
+    .data(nodeData, d => d.node.id);
+
+  nodeSel.exit().transition().duration(250).attr('opacity',0).remove();
+
+  const enter = nodeSel.enter().append('g')
+    .attr('class','node-card')
+    .attr('transform', d => `translate(${d.x},${d.y}) scale(0.85)`)
+    .attr('opacity', 0);
+
+  enter.append('rect').attr('class','node-rect');
+  enter.append('text').attr('class','node-name');
+  enter.append('text').attr('class','node-sub');
+  enter.append('text').attr('class','node-badge');
+  enter.append('text').attr('class','node-icon');
+
+  const merged = enter.merge(nodeSel);
+
+  merged.style('cursor', d => (d.node.__root || d.node.__line) ? 'default' : 'pointer');
+  merged.on('click', (ev,d) => {
+    if (d.node.__root || d.node.__line) return;
+    if (advancedMode) openNodeModal({ mode:'edit', node:d.node, order:d.order });
+    else openInfoPopover(d, window.__lastResult);
+  });
+
+  merged.each(function(d){
+    const g = d3.select(this);
+    const excluded = nodeExcluded(d.order, activeOrder);
+    const isSpouse = d.order === 'spouse';
+    const isRoot = d.node.__root;
+    const isLine = d.node.__line;
+    const share = heirShares[d.node.id] || 0;
+    const baseColor = isRoot ? '#111827' : isSpouse ? ORDER_COLOR.spouse : isLine ? '#64748b' : ORDER_COLOR[d.order];
+    const dead = d.node.status && d.node.status !== 'alive';
+
+    g.select('rect.node-rect')
+      .attr('x', -NODE_W/2).attr('y', -NODE_H/2)
+      .attr('width', NODE_W).attr('height', NODE_H)
+      .attr('rx', 18)
+      .attr('fill', isRoot ? '#111827' : dead ? '#f1f5f9' : `${baseColor}14`)
+      .attr('stroke', excluded ? '#dc2626' : (share>0 ? baseColor : `${baseColor}55`))
+      .attr('stroke-width', share>0 && !excluded ? 3 : 1.6)
+      .attr('filter', isRoot ? 'url(#soft-shadow)' : null);
+
+    g.select('text.node-name')
+      .attr('text-anchor','middle').attr('y', isLine? 5 : -8)
+      .attr('font-size', isLine ? 14 : 17)
+      .attr('font-weight', 800)
+      .attr('fill', isRoot ? '#ffffff' : isLine ? '#64748b' : '#111827')
+      .attr('font-family', "'Inter', sans-serif")
+      .text(d.node.name);
+
+    g.select('text.node-sub')
+      .attr('text-anchor','middle').attr('y', 16)
+      .attr('font-size', 13.5)
+      .attr('font-weight', 700)
+      .attr('fill', isRoot ? '#cbd5e1' : '#4b5563')
+      .text(isLine ? '' : (share>0 ? `Erbquote ${toFraction(share)} · ${fmtPct(share)}` : (dead ? STATUS_META[d.node.status].label : (isRoot?'':''))));
+
+    g.select('text.node-badge')
+      .attr('text-anchor','middle').attr('y', 30)
+      .attr('font-size', 14)
+      .attr('font-weight', 800)
+      .attr('fill', isRoot ? '#a7f3d0' : baseColor)
+      .attr('font-family',"'JetBrains Mono', monospace")
+      .text(share>0 ? fmtEUR.format(share*state.estateValue) : '');
+
+    g.select('text.node-icon')
+      .attr('x', NODE_W/2 - 20).attr('y', -NODE_H/2 + 22)
+      .attr('font-size', 17)
+      .text(dead ? STATUS_META[d.node.status].icon : (isSpouse ? '♥' : ''));
+
+    g.classed('node-excluded', excluded);
+  });
+
+  merged.transition().duration(500)
+    .attr('transform', d => `translate(${d.x},${d.y}) scale(1)`)
+    .attr('opacity', 1);
+
+  positionOrderLabels(d3.zoomTransform(svg.node()));
+}
+
+function renderDonut(result){
+  const { heirShares, spouseShare } = result;
+  const entries = [];
+  if (spouseShare>0) entries.push({ id:'spouse', name: state.spouse.name, value: spouseShare, color: ORDER_COLOR.spouse });
+  Object.entries(heirShares).forEach(([id,val]) => {
+    const meta = result.heirMeta[id];
+    if (!meta || val<=0) return;
+    entries.push({ id, name: meta.node.name, value: val, color: ORDER_COLOR[meta.order] });
+  });
+  if (entries.length===0) entries.push({ id:'fiskus', name:'Fiskus (Staat)', value:1, color:'#94a3b8' });
+
+  const svgD = d3.select('#donut-svg');
+  svgD.selectAll('*').remove();
+  const w=150,h=150,r=Math.min(w,h)/2;
+  const g = svgD.append('g').attr('transform',`translate(${w/2},${h/2})`);
+  const pie = d3.pie().value(d=>d.value).sort(null);
+  const arc = d3.arc().innerRadius(r*0.6).outerRadius(r-2).cornerRadius(3).padAngle(0.015);
+
+  g.selectAll('path').data(pie(entries)).enter().append('path')
+    .attr('d', arc).attr('fill', d=>d.data.color)
+    .attr('stroke','#ffffff').attr('stroke-width',2)
+    .style('opacity',0)
+    .transition().duration(500).style('opacity',1);
+
+  g.append('text').attr('text-anchor','middle').attr('y',-2).attr('font-size',17).attr('font-weight',800).attr('fill','#111827')
+    .text(entries.length===1 && entries[0].id==='fiskus' ? 'Staat' : entries.length+' Erben');
+  g.append('text').attr('text-anchor','middle').attr('y',17).attr('font-size',11).attr('font-weight',700).attr('fill','#9ca3af')
+    .text(entries[0].id==='fiskus' ? 'Erbrecht des Fiskus' : '');
+
+  const legend = document.getElementById('donut-legend');
+  legend.innerHTML = entries.map(e => `
+    <div class="flex items-center gap-2">
+      <span class="w-3 h-3 rounded-full flex-none" style="background:${e.color}"></span>
+      <span class="truncate flex-1 font-semibold" style="color:#374151">${e.name}</span>
+      <span class="font-mono font-bold flex-none" style="color:#111827">${toFraction(e.value)}</span>
+    </div>`).join('');
+}
+
+function renderFractionBar(result){
+  const { heirShares, spouseShare } = result;
+  const bar = document.getElementById('fraction-bar');
+  const segs = [];
+  if (spouseShare>0) segs.push({ w: spouseShare, color: ORDER_COLOR.spouse, label: state.spouse.name });
+  Object.entries(heirShares).forEach(([id,val]) => {
+    const meta = result.heirMeta[id];
+    if (!meta || val<=0) return;
+    segs.push({ w: val, color: ORDER_COLOR[meta.order], label: meta.node.name });
+  });
+  if (segs.length===0) segs.push({ w:1, color:'#94a3b8', label:'Fiskus' });
+  bar.innerHTML = segs.map(s => `<div title="${s.label} (${fmtPct(s.w)})" style="width:${s.w*100}%; background:${s.color}" class="h-full"></div>`).join('');
+}
+
+function renderHeirTable(result){
+  const { heirShares, spouseShare } = result;
+  const rows = [];
+  if (spouseShare>0) rows.push({ name: state.spouse.name, order:'Ehegatte', share: spouseShare, color: ORDER_COLOR.spouse });
+  Object.entries(heirShares).sort((a,b)=>b[1]-a[1]).forEach(([id,val]) => {
+    const meta = result.heirMeta[id];
+    if (!meta || val<=0) return;
+    rows.push({ name: meta.node.name, order: meta.order+'. Ordnung', share: val, color: ORDER_COLOR[meta.order] });
+  });
+  const el = document.getElementById('heir-table');
+  if (rows.length===0){
+    el.innerHTML = `<div class="text-base font-semibold py-2" style="color:#6b7280">Keine Erben — der Nachlass fällt an den Staat.</div>`;
+    return;
+  }
+  el.innerHTML = rows.map(r => `
+    <div class="flex items-center gap-3 rounded-xl px-3.5 py-3" style="background:#fafbfc;border:1px solid #eef0f3;">
+      <span class="w-3 h-3 rounded-full flex-none" style="background:${r.color}"></span>
+      <div class="flex-1 min-w-0">
+        <div class="font-extrabold truncate text-lg" style="color:#111827">${r.name}</div>
+        <div class="text-sm font-semibold" style="color:#9ca3af">${r.order}</div>
+      </div>
+      <div class="text-right flex-none">
+        <div class="font-mono font-extrabold text-xl" style="color:#111827">${toFraction(r.share)}</div>
+        <div class="text-sm font-bold font-mono" style="color:#6b7280">${fmtEUR.format(r.share*state.estateValue)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderSteps(result){
+  const el = document.getElementById('steps-timeline');
+  el.innerHTML = `<div class="absolute left-[7px] top-1 bottom-1 w-[3px] timeline-line rounded-full"></div>` +
+    result.steps.map((s,i) => `
+      <div class="relative fade-up" style="animation-delay:${i*40}ms">
+        <span class="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-canvas border-2" style="border-color:#d1d5db;"></span>
+        <div class="flex items-center gap-2 mb-1">
+          <i data-lucide="${s.icon}" class="w-4 h-4" style="color:#6b7280"></i>
+          <span class="text-base font-extrabold" style="color:#111827">${s.title}</span>
+        </div>
+        <p class="text-base leading-relaxed mb-1.5" style="color:#4b5563">${s.desc}</p>
+        ${s.law ? `<span class="law-pill inline-block px-2 py-1 rounded-lg text-sm font-bold" style="background:#ecfdf5;color:#047857;">${s.law}</span>` : ''}
+      </div>`).join('');
+}
+
+/* ============================================================
+   Section 4: SIMPLE-MODE INFO POPUP (read-only, tap a node)
+   ============================================================ */
+
+function openInfoPopover(d, result){
+  const node = d.node;
+  const dead = node.status && node.status !== 'alive';
+  const share = result.heirShares[node.id] || (d.order==='spouse' ? result.spouseShare : 0);
+  const excluded = nodeExcluded(d.order, result.activeOrder);
+  const color = d.order==='spouse' ? ORDER_COLOR.spouse : ORDER_COLOR[d.order];
+
+  let explanation;
+  if (excluded){
+    explanation = `Diese Person gehört zur ${d.order}. Ordnung. Weil eine nähere Ordnung Erben stellt, ist die ${d.order}. Ordnung gesetzlich ausgeschlossen.`;
+  } else if (share > 0){
+    explanation = `Gesetzliche Erbquote: <b>${toFraction(share)}</b> (${fmtPct(share)}).<br>Bei einem Nachlass von ${fmtEUR.format(state.estateValue)} entspricht das <b>${fmtEUR.format(share*state.estateValue)}</b>.`;
+  } else if (dead){
+    const hasHeirs = (node.children||[]).some(isProductive);
+    explanation = `Status: ${STATUS_META[node.status].label}. Diese Person erhält deshalb keinen eigenen Erbteil.` +
+      (hasHeirs ? ' Ihr Anteil geht auf die eigenen Kinder bzw. Enkel über (Eintrittsprinzip).' : '');
+  } else {
+    explanation = 'Für diese Person ist kein eigener Erbteil vorgesehen.';
+  }
+
+  document.getElementById('info-modal-body').innerHTML = `
+    <div class="flex items-center gap-3 mb-4">
+      <span class="w-4 h-4 rounded-full flex-none" style="background:${color}"></span>
+      <h3 class="text-2xl font-extrabold flex-1 min-w-0 truncate" style="color:#111827">${node.name}</h3>
+      ${dead ? `<span class="text-2xl flex-none">${STATUS_META[node.status].icon}</span>` : ''}
+    </div>
+    <p class="text-lg leading-relaxed" style="color:#374151">${explanation}</p>
+  `;
+  document.getElementById('info-modal').classList.remove('hidden');
+  document.getElementById('info-modal').classList.add('flex');
+}
+
+function closeInfoModal(){
+  document.getElementById('info-modal').classList.add('hidden');
+  document.getElementById('info-modal').classList.remove('flex');
+}
+document.getElementById('info-modal-close').onclick = closeInfoModal;
+document.getElementById('info-modal').addEventListener('click', (e) => { if (e.target.id==='info-modal') closeInfoModal(); });
+
+/* ============================================================
+   Section 5: ADVANCED MODE — manual add / edit modal
+   ============================================================ */
+
+let advancedMode = false;
+let modalCtx = { mode:'add', kind:null, node:null, parent:null };
+
+const STATUS_OPTIONS = ['alive','deceased','disclaimed','unworthy'];
+let modalSelectedStatus = 'alive';
+
+function statusChipHTML(status, active){
+  const meta = STATUS_META[status];
+  const colorMap = STATUS_COLORS;
+  return `<button data-status="${status}" style="color:${colorMap[status]}; ${active ? `background:${colorMap[status]}14; border-color:${colorMap[status]};` : 'border-color:#e2e5ea;'}"
+      class="status-chip ${active?'status-btn-active':''} px-2.5 py-2.5 rounded-xl text-sm font-bold border-2 hover:bg-gray-50 flex items-center gap-1.5 justify-center">
+      <span>${meta.icon}</span>${meta.label}
+    </button>`;
+}
+function renderStatusChips(){
+  document.getElementById('modal-status').innerHTML = STATUS_OPTIONS.map(s => statusChipHTML(s, s===modalSelectedStatus)).join('');
+  document.querySelectorAll('#modal-status .status-chip').forEach(btn => {
+    btn.onclick = () => { modalSelectedStatus = btn.dataset.status; renderStatusChips(); };
+  });
+}
+
+function openNodeModal({ mode, kind, node, order, parent }){
+  modalCtx = { mode, kind, node, parent };
+  modalSelectedStatus = node ? node.status : 'alive';
+  document.getElementById('modal-name').value = node ? node.name : '';
+  document.getElementById('modal-title').innerHTML = mode==='add'
+    ? `<i data-lucide="user-plus" class="w-5 h-5"></i> Person hinzufügen`
+    : `<i data-lucide="user-cog" class="w-5 h-5"></i> ${node.name} bearbeiten`;
+
+  renderStatusChips();
+
+  const relWrap = document.getElementById('modal-relation-wrap');
+  const relSel = document.getElementById('modal-relation');
+  relWrap.classList.add('hidden');
+  if (mode==='add' && kind==='parent'){
+    relWrap.classList.remove('hidden');
+    relSel.innerHTML = `<option value="father">Vater</option><option value="mother">Mutter</option>`;
+  } else if (mode==='add' && kind==='grandparent'){
+    relWrap.classList.remove('hidden');
+    relSel.innerHTML = `
+      <option value="paternal-gf">Großvater väterlicherseits</option>
+      <option value="paternal-gm">Großmutter väterlicherseits</option>
+      <option value="maternal-gf">Großvater mütterlicherseits</option>
+      <option value="maternal-gm">Großmutter mütterlicherseits</option>`;
+  }
+
+  document.getElementById('modal-actions-existing').classList.toggle('hidden', mode!=='edit');
+
+  document.getElementById('node-modal').classList.remove('hidden');
+  document.getElementById('node-modal').classList.add('flex');
+  document.getElementById('modal-name').focus();
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeNodeModal(){
+  document.getElementById('node-modal').classList.add('hidden');
+  document.getElementById('node-modal').classList.remove('flex');
+}
+
+document.getElementById('modal-close').onclick = closeNodeModal;
+document.getElementById('node-modal').addEventListener('click', (e) => { if (e.target.id==='node-modal') closeNodeModal(); });
+
+document.getElementById('modal-save').onclick = () => {
+  const name = document.getElementById('modal-name').value.trim() || 'Unbenannt';
+
+  if (modalCtx.mode === 'edit'){
+    modalCtx.node.name = name;
+    modalCtx.node.status = modalSelectedStatus;
+    pendingFit = true;
+    render();
+    closeNodeModal();
+    return;
+  }
+
+  // ADD mode
+  const kind = modalCtx.kind;
+  if (kind === 'spouse'){
+    state.spouse = makeNode(name, modalSelectedStatus);
+  } else if (kind === 'child'){
+    state.children.push(makeNode(name, modalSelectedStatus));
+  } else if (kind === 'parent'){
+    const rel = document.getElementById('modal-relation').value;
+    const n = makeNode(name, modalSelectedStatus);
+    if (rel === 'father') state.father = n; else state.mother = n;
+  } else if (kind === 'grandparent'){
+    const rel = document.getElementById('modal-relation').value;
+    const n = makeNode(name, modalSelectedStatus);
+    if (rel==='paternal-gf') state.grandparents.paternal.grandfather = n;
+    else if (rel==='paternal-gm') state.grandparents.paternal.grandmother = n;
+    else if (rel==='maternal-gf') state.grandparents.maternal.grandfather = n;
+    else state.grandparents.maternal.grandmother = n;
+  } else if (kind === 'descendant'){
+    modalCtx.parent.children.push(makeNode(name, modalSelectedStatus));
+  }
+  pendingFit = true;
+  render();
+  closeNodeModal();
+  toast(`${name} hinzugefügt`);
+};
+
+document.getElementById('modal-add-child').onclick = () => {
+  const parentNode = modalCtx.node;
+  closeNodeModal();
+  openNodeModal({ mode:'add', kind:'descendant', parent: parentNode });
+};
+
+document.getElementById('modal-delete').onclick = () => {
+  const target = modalCtx.node;
+  if (target.id === state.spouse?.id) state.spouse = null;
+  else if (target.id === state.father?.id) state.father = null;
+  else if (target.id === state.mother?.id) state.mother = null;
+  else {
+    const gp = state.grandparents;
+    for (const line of [gp.paternal, gp.maternal]){
+      if (line.grandfather?.id === target.id) line.grandfather = null;
+      if (line.grandmother?.id === target.id) line.grandmother = null;
+    }
+    state.children = removeFromTree(state.children, target.id);
+    if (state.father) state.father.children = removeFromTree(state.father.children, target.id);
+    if (state.mother) state.mother.children = removeFromTree(state.mother.children, target.id);
+    for (const line of [gp.paternal, gp.maternal]){
+      if (line.grandfather) line.grandfather.children = removeFromTree(line.grandfather.children, target.id);
+      if (line.grandmother) line.grandmother.children = removeFromTree(line.grandmother.children, target.id);
+    }
+  }
+  pendingFit = true;
+  render();
+  closeNodeModal();
+  toast(`${target.name} entfernt`);
+};
+
+function removeFromTree(list, id){
+  return (list||[]).filter(n => n.id !== id).map(n => ({...n, children: removeFromTree(n.children, id)}));
+}
+
+function toggleAdvanced(){
+  advancedMode = !advancedMode;
+  syncAdvancedUI();
+}
+function syncAdvancedUI(){
+  document.getElementById('advanced-toolbar').classList.toggle('hidden', !advancedMode);
+  document.getElementById('advanced-toolbar').classList.toggle('flex', advancedMode);
+  document.getElementById('preset-bar').classList.toggle('hidden', !advancedMode);
+  document.getElementById('preset-bar').classList.toggle('flex', advancedMode);
+  const btn = document.getElementById('btn-advanced-toggle');
+  btn.style.background = advancedMode ? '#111827' : '';
+  btn.style.color = advancedMode ? '#ffffff' : '#374151';
+}
+document.getElementById('btn-advanced-toggle').onclick = toggleAdvanced;
+
+document.getElementById('add-spouse').onclick = () => {
+  if (state.spouse){ toast('Es gibt bereits einen Ehegatten/eine Ehegattin — Knoten anklicken zum Bearbeiten.'); return; }
+  openNodeModal({ mode:'add', kind:'spouse' });
+};
+document.getElementById('add-child').onclick = () => openNodeModal({ mode:'add', kind:'child' });
+document.getElementById('add-parent').onclick = () => openNodeModal({ mode:'add', kind:'parent' });
+document.getElementById('add-grandparent').onclick = () => openNodeModal({ mode:'add', kind:'grandparent' });
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.onclick = () => {
+    const p = btn.dataset.preset;
+    if (p==='A') loadPresetA(); else if (p==='B') loadPresetB(); else loadPresetC();
+  };
+});
+
+/* ============================================================
+   Section 6: results-screen chrome — estate slider, zugewinn
+   ============================================================ */
+
+function showResultsScreen(){
+  document.getElementById('wizard-screen').classList.add('hidden');
+  document.getElementById('results-screen').classList.remove('hidden');
+  document.getElementById('results-screen').classList.add('flex');
+}
+
+document.getElementById('btn-restart').onclick = restartWizard;
+
+const slider = document.getElementById('estate-slider');
+const numberInput = document.getElementById('estate-number');
+const estateDisplay = document.getElementById('estate-value-display');
+function updateEstateDisplay(){
+  estateDisplay.textContent = fmtEUR.format(state.estateValue);
+  numberInput.value = state.estateValue;
+}
+slider.addEventListener('input', () => {
+  state.estateValue = +slider.value;
+  updateEstateDisplay();
+  render();
+});
+numberInput.addEventListener('change', () => {
+  const v = Math.max(0, +numberInput.value || 0);
+  state.estateValue = v;
+  if (v <= +slider.max) slider.value = v;
+  updateEstateDisplay();
+  render();
+});
+
+document.getElementById('zugewinn-toggle').addEventListener('change', (e) => {
+  state.zugewinn = e.target.checked;
+  render();
+});
+
+window.addEventListener('resize', () => {
+  if (document.getElementById('results-screen').classList.contains('hidden')) return;
+  fitView(lastNodeData, false);
+  positionOrderLabels(d3.zoomTransform(svg.node()));
+});
+
+/* ============================================================
+   Section 7: GUIDED QUESTIONNAIRE WIZARD (Frage-Assistent)
+   ============================================================ */
+
+let wizardScreen = 'perspective';
+let wizardHistory = [];
+
+function tx(){
+  const other = state.perspective === 'other';
+  return {
+    maritalQ: other ? 'War die verstorbene Person verheiratet oder in einer eingetragenen Lebenspartnerschaft (und lebt der Partner/die Partnerin noch)?' : 'Sind Sie verheiratet oder in einer eingetragenen Lebenspartnerschaft?',
+    spouseNamePlaceholder: other ? 'Name des Ehepartners (freiwillig)' : 'Name Ihres Ehepartners (freiwillig)',
+    zugewinnQ: 'Wurde ein Ehevertrag mit Gütertrennung geschlossen? Falls nicht, gilt automatisch die Zugewinngemeinschaft — das ist der gesetzliche Normalfall.',
+    childCountQ: other ? 'Wie viele Kinder hatte die verstorbene Person?' : 'Wie viele Kinder haben Sie?',
+    childDetailsTitle: other ? 'Angaben zu den Kindern' : 'Angaben zu Ihren Kindern',
+    parentsQ: other ? 'Leben die Eltern der verstorbenen Person noch?' : 'Leben Ihre Eltern noch?',
+    grandparentsQ: other ? 'Leben die Großeltern der verstorbenen Person noch?' : 'Leben Ihre Großeltern noch?',
+  };
+}
+
+function escapeAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function wizardShell(stepNum, title, subtitle, bodyHTML){
+  const pct = {1:8,2:24,3:40,4:56,5:74,6:90}[stepNum] || 100;
+  return `
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-extrabold uppercase tracking-wide" style="color:#9333ea">Schritt ${stepNum}</span>
+        ${wizardHistory.length ? `<button type="button" data-action="wizard-back" class="text-base font-bold flex items-center gap-1" style="color:#4b5266">← Zurück</button>` : ''}
+      </div>
+      <div class="w-full h-2.5 rounded-full overflow-hidden" style="background:#e5e7eb;">
+        <div class="h-full rounded-full" style="width:${pct}%; background:linear-gradient(90deg,#059669,#9333ea);"></div>
+      </div>
+    </div>
+    <h2 class="text-3xl font-extrabold mb-2" style="color:#111827">${title}</h2>
+    ${subtitle ? `<p class="text-lg mb-6" style="color:#4b5266">${subtitle}</p>` : '<div class="mb-6"></div>'}
+    ${bodyHTML}
+  `;
+}
+
+function bigChoiceHTML(icon, title, subtitle, action, value){
+  return `<button type="button" data-action="${action}" data-value="${value}"
+    class="big-choice w-full flex items-center gap-4 text-left rounded-2xl border-2 px-6 py-6 transition">
+    <span class="text-3xl flex-none">${icon}</span>
+    <span class="min-w-0">
+      <span class="block text-xl font-extrabold" style="color:#111827">${title}</span>
+      ${subtitle ? `<span class="block text-base mt-0.5" style="color:#6b7280">${subtitle}</span>` : ''}
+    </span>
+  </button>`;
+}
+
+function counterHTML(value, action, dataAttrs, min=0, max=8){
+  return `<div class="flex items-center justify-center gap-5 py-4">
+    <button type="button" data-action="${action}" data-delta="-1" ${dataAttrs}
+      class="counter-btn w-14 h-14 rounded-full border-2 text-3xl font-bold flex items-center justify-center transition" ${value<=min?'disabled':''}>−</button>
+    <div class="w-24 text-center text-6xl font-extrabold font-mono" style="color:#111827;">${value}</div>
+    <button type="button" data-action="${action}" data-delta="1" ${dataAttrs}
+      class="counter-btn w-14 h-14 rounded-full border-2 text-3xl font-bold flex items-center justify-center transition" ${value>=max?'disabled':''}>+</button>
+  </div>`;
+}
+
+function statusButtonsHTML(current, action, dataAttrs, options){
+  options = options || ['alive','deceased','disclaimed','unworthy'];
+  return `<div class="grid grid-cols-2 gap-2.5">` + options.map(opt => {
+    const meta = STATUS_META[opt];
+    const active = current === opt;
+    const color = STATUS_COLORS[opt];
+    return `<button type="button" data-action="${action}" data-value="${opt}" ${dataAttrs}
+      class="status-btn ${active?'status-btn-active':''} flex items-center gap-2 justify-center rounded-xl border-2 px-3 py-3.5 text-base font-bold transition"
+      style="${active ? `background:${color}14;border-color:${color};color:${color};` : `border-color:#e2e5ea;color:#4b5266;`}">
+      <span class="text-xl leading-none">${meta.icon}</span><span>${meta.label}</span>
+    </button>`;
+  }).join('') + `</div>`;
+}
+
+/* ---- screens ---- */
+
+function screenPerspective(){
+  const body = `<div class="space-y-4">
+    ${bigChoiceHTML('👪','Wer erbt von MIR?','Ich möchte meine eigene gesetzliche Erbfolge sehen.','set-perspective','self')}
+    ${bigChoiceHTML('🔍','Von wem erbe ICH?','Ich bin Angehörige/r und möchte die Erbfolge einer verstorbenen Person sehen.','set-perspective','other')}
+  </div>`;
+  return wizardShell(1, 'Herzlich willkommen! Was möchten Sie herausfinden?', 'Beantworten Sie ein paar einfache Fragen — wir zeigen Ihnen danach genau, wer gesetzlich erbt.', body);
+}
+
+function screenMarital(){
+  const t = tx();
+  let body;
+  if (state.spouse){
+    body = `<div class="space-y-5">
+      <div>
+        <label class="block text-base font-extrabold mb-2" style="color:#374151">Name (freiwillig)</label>
+        <input type="text" data-bind="spouseName" value="${escapeAttr(state.spouse.name)}" placeholder="${t.spouseNamePlaceholder}"
+          class="w-full text-lg rounded-xl border-2 px-4 py-3.5 outline-none focus:border-emerald-500" style="border-color:#d1d5db;">
+      </div>
+      <div>
+        <label class="block text-base font-extrabold mb-2" style="color:#374151">${t.zugewinnQ}</label>
+        <div class="grid grid-cols-1 gap-2.5">
+          <button type="button" data-action="toggle-zugewinn" data-value="true" class="choice-pill ${state.zugewinn?'choice-pill-active':''}">Nein — gesetzlicher Normalfall (Zugewinngemeinschaft)</button>
+          <button type="button" data-action="toggle-zugewinn" data-value="false" class="choice-pill ${!state.zugewinn?'choice-pill-active':''}">Ja, Gütertrennung wurde vereinbart</button>
+        </div>
+      </div>
+      <button type="button" data-action="unset-married" class="text-base font-bold underline" style="color:#6b7280">Doch nicht verheiratet</button>
+      <button type="button" data-action="marital-next" class="wizard-next-btn">Weiter</button>
+    </div>`;
+  } else {
+    body = `<div class="space-y-4">
+      ${bigChoiceHTML('💍','Ja','','set-married','yes')}
+      ${bigChoiceHTML('➡️','Nein','','set-married','no')}
+    </div>`;
+  }
+  return wizardShell(2, t.maritalQ, null, body);
+}
+
+function screenChildCount(){
+  const t = tx();
+  const body = counterHTML(state.children.length, 'child-count', '', 0, 8) +
+    `<button type="button" data-action="childcount-next" class="wizard-next-btn mt-4">Weiter</button>`;
+  return wizardShell(3, t.childCountQ, 'Nutzen Sie die Plus- und Minus-Knöpfe.', body);
+}
+
+function screenChildDetails(){
+  const t = tx();
+  const cards = state.children.map((c,i) => `
+    <div class="rounded-2xl border-2 p-5 mb-4" style="border-color:#e2e5ea;background:#fafbfc;">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-white flex-none" style="background:${ORDER_COLOR[1]}">${i+1}</span>
+        <input type="text" data-bind="childName" data-index="${i}" value="${escapeAttr(c.name)}" placeholder="Kind ${i+1}"
+          class="flex-1 min-w-0 text-lg font-extrabold rounded-lg border-2 px-3 py-2 outline-none focus:border-emerald-500" style="border-color:#d1d5db;">
+      </div>
+      ${statusButtonsHTML(c.status, 'child-status', `data-index="${i}"`)}
+      ${c.status!=='alive' ? `
+        <div class="mt-4 pt-4" style="border-top:1px solid #e2e5ea;">
+          <div class="text-base font-bold mb-1" style="color:#374151">Hat ${c.name} eigene Kinder (Enkelkinder)?</div>
+          ${counterHTML(c.children.length, 'grandchild-count', `data-index="${i}"`, 0, 6)}
+        </div>` : ''}
+    </div>`).join('');
+  const body = cards + `<button type="button" data-action="childdetails-next" class="wizard-next-btn mt-2">Weiter</button>`;
+  return wizardShell(4, t.childDetailsTitle, null, body);
+}
+
+function screenParents(){
+  const t = tx();
+  const card = (which, label) => {
+    const p = state[which];
+    return `<div class="rounded-2xl border-2 p-5 mb-4" style="border-color:#e2e5ea;background:#fafbfc;">
+      <input type="text" data-bind="parentName" data-which="${which}" value="${escapeAttr(p.name)}" placeholder="${label}"
+        class="w-full text-lg font-extrabold rounded-lg border-2 px-3 py-2 mb-3 outline-none focus:border-emerald-500" style="border-color:#d1d5db;">
+      ${statusButtonsHTML(p.status, 'parent-status', `data-which="${which}"`)}
+      ${p.status!=='alive' ? `
+        <div class="mt-4 pt-4" style="border-top:1px solid #e2e5ea;">
+          <div class="text-base font-bold mb-1" style="color:#374151">Wie viele Geschwister hinterlässt ${p.name}?</div>
+          ${counterHTML(p.children.length, 'sibling-count', `data-which="${which}"`, 0, 6)}
+        </div>` : ''}
+    </div>`;
+  };
+  const body = card('father','Vater') + card('mother','Mutter') +
+    `<button type="button" data-action="parents-next" class="wizard-next-btn mt-2">Weiter</button>`;
+  return wizardShell(5, t.parentsQ, null, body);
+}
+
+function screenGrandparents(){
+  const t = tx();
+  const gp = state.grandparents;
+  const card = (which, node, label) => `<div class="rounded-2xl border-2 p-5 mb-4" style="border-color:#e2e5ea;background:#fafbfc;">
+    <div class="text-lg font-extrabold mb-3" style="color:#111827">${label}</div>
+    ${statusButtonsHTML(node.status, 'gp-status', `data-which="${which}"`, ['alive','deceased'])}
+  </div>`;
+  const body = card('pgf', gp.paternal.grandfather, 'Großvater väterlicherseits')
+    + card('pgm', gp.paternal.grandmother, 'Großmutter väterlicherseits')
+    + card('mgf', gp.maternal.grandfather, 'Großvater mütterlicherseits')
+    + card('mgm', gp.maternal.grandmother, 'Großmutter mütterlicherseits')
+    + `<button type="button" data-action="grandparents-finish" class="wizard-next-btn mt-2">Ergebnis anzeigen</button>`;
+  return wizardShell(6, t.grandparentsQ, null, body);
+}
+
+const WIZARD_SCREENS = {
+  perspective: screenPerspective,
+  marital: screenMarital,
+  childcount: screenChildCount,
+  childdetails: screenChildDetails,
+  parents: screenParents,
+  grandparents: screenGrandparents,
+};
+
+function renderWizard(){
+  document.getElementById('wizard-card').innerHTML = WIZARD_SCREENS[wizardScreen]();
+  if (window.lucide) lucide.createIcons();
+}
+
+function goWizard(screen){
+  wizardHistory.push(wizardScreen);
+  wizardScreen = screen;
+  if (screen === 'parents'){
+    if (!state.father) state.father = makeNode('Vater', 'alive');
+    if (!state.mother) state.mother = makeNode('Mutter', 'alive');
+  }
+  if (screen === 'grandparents') ensureGP();
+  renderWizard();
+}
+
+function wizardBack(){
+  const prev = wizardHistory.pop();
+  if (prev){ wizardScreen = prev; renderWizard(); }
+}
+
+function ensureGP(){
+  const gp = state.grandparents;
+  if (!gp.paternal.grandfather) gp.paternal.grandfather = makeNode('Großvater väterlicherseits', 'alive');
+  if (!gp.paternal.grandmother) gp.paternal.grandmother = makeNode('Großmutter väterlicherseits', 'alive');
+  if (!gp.maternal.grandfather) gp.maternal.grandfather = makeNode('Großvater mütterlicherseits', 'alive');
+  if (!gp.maternal.grandmother) gp.maternal.grandmother = makeNode('Großmutter mütterlicherseits', 'alive');
+}
+
+function afterDescendants(){
+  const productive = isProductive({ status:'x', children: state.children });
+  if (productive) finishWizard(); else goWizard('parents');
+}
+function afterParents(){
+  const productive = isProductive({ status:'x', children: [state.father, state.mother].filter(Boolean) });
+  if (productive) finishWizard(); else goWizard('grandparents');
+}
+
+function finishWizard(){
+  pendingFit = true;
+  showResultsScreen();
+  render();
+}
+
+function restartWizard(){
+  state = freshState();
+  wizardScreen = 'perspective';
+  wizardHistory = [];
+  advancedMode = false;
+  syncAdvancedUI();
+  document.getElementById('results-screen').classList.add('hidden');
+  document.getElementById('results-screen').classList.remove('flex');
+  document.getElementById('wizard-screen').classList.remove('hidden');
+  renderWizard();
+}
+
+/* ---- delegated event wiring ---- */
+
+function handleWizardClick(e){
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+
+  if (action === 'set-perspective'){ state.perspective = btn.dataset.value; goWizard('marital'); }
+  else if (action === 'set-married'){
+    if (btn.dataset.value === 'yes'){
+      if (!state.spouse) state.spouse = makeNode('Ehegatte/in', 'alive');
+      renderWizard();
+    } else {
+      state.spouse = null;
+      goWizard('childcount');
+    }
+  }
+  else if (action === 'unset-married'){ state.spouse = null; renderWizard(); }
+  else if (action === 'toggle-zugewinn'){ state.zugewinn = btn.dataset.value === 'true'; renderWizard(); }
+  else if (action === 'marital-next'){ goWizard('childcount'); }
+  else if (action === 'child-count'){
+    const n = Math.max(0, Math.min(8, state.children.length + (+btn.dataset.delta)));
+    if (n > state.children.length) state.children.push(makeNode(`Kind ${state.children.length+1}`, 'alive'));
+    else if (n < state.children.length) state.children.pop();
+    renderWizard();
+  }
+  else if (action === 'childcount-next'){
+    if (state.children.length === 0) afterDescendants(); else goWizard('childdetails');
+  }
+  else if (action === 'child-status'){
+    state.children[+btn.dataset.index].status = btn.dataset.value;
+    renderWizard();
+  }
+  else if (action === 'grandchild-count'){
+    const kid = state.children[+btn.dataset.index];
+    const n = Math.max(0, Math.min(6, kid.children.length + (+btn.dataset.delta)));
+    if (n > kid.children.length) kid.children.push(makeNode(`Enkelkind ${kid.children.length+1}`, 'alive'));
+    else if (n < kid.children.length) kid.children.pop();
+    renderWizard();
+  }
+  else if (action === 'childdetails-next'){ afterDescendants(); }
+  else if (action === 'parent-status'){
+    state[btn.dataset.which].status = btn.dataset.value;
+    renderWizard();
+  }
+  else if (action === 'sibling-count'){
+    const p = state[btn.dataset.which];
+    const n = Math.max(0, Math.min(6, p.children.length + (+btn.dataset.delta)));
+    if (n > p.children.length) p.children.push(makeNode(`Geschwister ${p.children.length+1}`, 'alive'));
+    else if (n < p.children.length) p.children.pop();
+    renderWizard();
+  }
+  else if (action === 'parents-next'){ afterParents(); }
+  else if (action === 'gp-status'){
+    const map = { pgf:['paternal','grandfather'], pgm:['paternal','grandmother'], mgf:['maternal','grandfather'], mgm:['maternal','grandmother'] };
+    const [line, role] = map[btn.dataset.which];
+    state.grandparents[line][role].status = btn.dataset.value;
+    renderWizard();
+  }
+  else if (action === 'grandparents-finish'){ finishWizard(); }
+  else if (action === 'wizard-back'){ wizardBack(); }
+}
+
+function handleWizardInput(e){
+  const el = e.target;
+  if (el.dataset.bind === 'spouseName' && state.spouse) state.spouse.name = el.value;
+  else if (el.dataset.bind === 'childName'){ const i=+el.dataset.index; if (state.children[i]) state.children[i].name = el.value; }
+  else if (el.dataset.bind === 'parentName'){ const which=el.dataset.which; if (state[which]) state[which].name = el.value; }
+}
+
+function handleWizardFocusOut(e){
+  const el = e.target;
+  if (el.dataset.bind === 'spouseName' && state.spouse && !el.value.trim()){ state.spouse.name='Ehegatte/in'; el.value=state.spouse.name; }
+  else if (el.dataset.bind === 'childName'){
+    const i=+el.dataset.index;
+    if (state.children[i] && !el.value.trim()){ state.children[i].name = `Kind ${i+1}`; el.value = state.children[i].name; }
+  } else if (el.dataset.bind === 'parentName'){
+    const which = el.dataset.which;
+    if (state[which] && !el.value.trim()){ state[which].name = which==='father' ? 'Vater' : 'Mutter'; el.value = state[which].name; }
+  }
+}
+
+const wizardCardEl = document.getElementById('wizard-card');
+wizardCardEl.addEventListener('click', handleWizardClick);
+wizardCardEl.addEventListener('input', handleWizardInput);
+wizardCardEl.addEventListener('focusout', handleWizardFocusOut);
+
+/* ============================================================
+   Section 8: INIT
+   ============================================================ */
+
+function init(){
+  state = freshState();
+  wizardScreen = 'perspective';
+  wizardHistory = [];
+  syncAdvancedUI();
+  renderWizard();
+  slider.value = state.estateValue;
+  updateEstateDisplay();
+  if (window.lucide) lucide.createIcons();
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
